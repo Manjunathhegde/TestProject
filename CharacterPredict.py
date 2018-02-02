@@ -9,7 +9,7 @@ from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("/tmp/data/", one_hot = True)
 
 #read file content
-path = 'data/ptb/ptb.train1.txt' #replace this with any small data file
+path = 'ptb.train1.txt' #replace this with any small data file
 text = open(path).read().lower()
 print('corpus length:', len(text))
 
@@ -49,7 +49,7 @@ for i, sentence in enumerate(sentences):
 
 #final tensor inputs
 x_input_tensor = tf.convert_to_tensor(X_np, name="xval", dtype=tf.bool)
-y = tf.convert_to_tensor(y_np, name="yval", dtype=tf.bool)
+y_input_tensor = tf.convert_to_tensor(y_np, name="yval", dtype=tf.bool)
 
 
 hm_epochs = 2
@@ -63,10 +63,8 @@ def recurrent_neural_network(x):
     layer = {'weights':tf.Variable(tf.random_normal([rnn_size,n_classes])),
              'biases':tf.Variable(tf.random_normal([n_classes]))}
 
-    # preparing input
-    x = tf.transpose(x, [1,0,2])
-    x = tf.reshape(x, [-1, chunk_size])
-    x = tf.split(x, n_chunks, 0)
+    x = tf.reshape(x, [-1, SEQUENCE_LENGTH, n_classes])
+    x = tf.split(x, SEQUENCE_LENGTH, n_classes)
 
     lstm_cell = rnn.BasicLSTMCell(rnn_size)
     outputs, states = rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
@@ -89,16 +87,16 @@ def train_neural_network(x):
             epoch_loss = 0
             for i in range(int(num_examples)):
                 epoch_x = x_input_tensor[i]
-                epoch_y = y[i]
-
+                epoch_y = y_input_tensor[i]
+                epoch_x = epoch_x.reshape((batch_size,SEQUENCE_LENGTH, len(chars)))
                 _, c = sess.run([optimizer, cost], feed_dict={x: epoch_x, y: epoch_y})
                 epoch_loss += c
 
             print('Epoch', epoch, 'completed out of',hm_epochs,'loss:',epoch_loss)
 
-        correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
+        # correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
 
-        accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
-        print('Accuracy:',accuracy.eval({x:mnist.test.images.reshape((-1, n_chunks, chunk_size)                                                             ), y:mnist.test.labels}))
+        # accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
+        # print('Accuracy:',accuracy.eval({x:mnist.test.images.reshape((-1, n_chunks, chunk_size)                                                             ), y:mnist.test.labels}))
 
-#train_neural_network(x_ten)
+train_neural_network(x_input_tensor)
