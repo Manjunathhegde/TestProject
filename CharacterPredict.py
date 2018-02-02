@@ -5,72 +5,87 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import rnn
 from tensorflow.python.client import device_lib
-from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets("/tmp/data/", one_hot = True)
+# from tensorflow.examples.tutorials.mnist import input_data
+# mnist = input_data.read_data_sets("/tmp/data/", one_hot = True)
 
-#read file content
-path = 'ptb.train1.txt' #replace this with any small data file
-text = open(path).read().lower()
-print('corpus length:', len(text))
-
-#get set of chars from the doc
-chars = sorted(list(set(text)))
-
-#create index dictionaries
-char_indices = dict((c, i) for i, c in enumerate(chars))
-indices_char = dict((i, c) for i, c in enumerate(chars))
-
-print('unique chars: {}'.format(len(chars)))
-
-#create training data in the following format
-#Each training sample is 40 character length. Predict the 41st character
 SEQUENCE_LENGTH = 40
 step = 3
-sentences = []
-next_chars = []
-for i in range(0, len(text) - SEQUENCE_LENGTH, step):
-    sentences.append(text[i: i + SEQUENCE_LENGTH]) #40 char length sentence (so t=40)
-    next_chars.append(text[i + SEQUENCE_LENGTH])   #y is 41 character
-print('num training examples: {}'.format(len(sentences)))
-print(sentences[10])
-print(next_chars[10])
+char_len = 0
+def GetNextData():   
+    #read file content
+    path = 'ptb.train1.txt' #replace this with any small data file
+    text = open(path).read().lower()
+    print('corpus length:', len(text))
+
+    #get set of chars from the doc
+    chars = sorted(list(set(text)))
+
+    #create index dictionaries
+    char_indices = dict((c, i) for i, c in enumerate(chars))
+    indices_char = dict((i, c) for i, c in enumerate(chars))
+
+    print('unique chars: {}'.format(len(chars)))
+    sentences = []
+    next_chars = []
+    #create training data in the following format
+    #Each training sample is 40 character length. Predict the 41st character
+    for i in range(0, len(text) - SEQUENCE_LENGTH, step):
+        sentences.append(text[i: i + SEQUENCE_LENGTH]) #40 char length sentence (so t=40)
+        next_chars.append(text[i + SEQUENCE_LENGTH])   #y is 41 character
+    print('num training examples: {}'.format(len(sentences)))
+    # print(sentences[10])
+    # print(next_chars[10])
 
 
-# define numpy arrays
-X_np = np.zeros((len(sentences), SEQUENCE_LENGTH, len(chars)), dtype=np.bool)
-y_np = np.zeros((len(sentences), len(chars)), dtype=np.bool)
+    # define numpy arrays
+    X_np = np.zeros((len(sentences), SEQUENCE_LENGTH, len(chars)), dtype=np.float32)
+    y_np = np.zeros((len(sentences), len(chars)), dtype=np.float32)
 
-#create input tensors
-# each input (x_t) is a one hot vector
-for i, sentence in enumerate(sentences):
-    for t, char in enumerate(sentence):
-        X_np[i, t, char_indices[char]] = 1
-    y_np[i, char_indices[next_chars[i]]] = 1
+    char_len = len(chars)
+    #create input tensors
+    # each input (x_t) is a one hot vector
+    for i, sentence in enumerate(sentences):
+        for t, char in enumerate(sentence):
+            X_np[i, t, char_indices[char]] = 1
+        y_np[i, char_indices[next_chars[i]]] = 1
 
-#final tensor inputs
-x_input_tensor = tf.convert_to_tensor(X_np, name="xval", dtype=tf.bool)
-y_input_tensor = tf.convert_to_tensor(y_np, name="yval", dtype=tf.bool)
+    #final tensor inputs
+    # x_input_tensor = tf.convert_to_tensor(X_np, name="xval", dtype=tf.float32)
+    # y_input_tensor = tf.convert_to_tensor(y_np, name="yval", dtype=tf.float32)
+
+    return X_np,y_np,char_indices,indices_char
+
+def PrepareInputData(text,ci):
+    text = text[:40]
+    test = np.zeros((1,SEQUENCE_LENGTH,35))
+    for i,c in enumerate(text):
+        # print(c)
+        test[0,i,ci[c]] = 1
+    return test
 
 
 hm_epochs = 2
-num_examples = len(sentences)
-n_classes = len(chars)
-batch_size = 1
+num_examples = 343
+n_classes = 35
+batch_size = 343
 rnn_size = 64
 
+x = tf.placeholder('float', [None, SEQUENCE_LENGTH,n_classes])
+y = tf.placeholder('float',[None, n_classes])
 
 def recurrent_neural_network(x):
     layer = {'weights':tf.Variable(tf.random_normal([rnn_size,n_classes])),
              'biases':tf.Variable(tf.random_normal([n_classes]))}
 
-    x = tf.reshape(x, [-1, SEQUENCE_LENGTH, n_classes])
-    x = tf.split(x, SEQUENCE_LENGTH, n_classes)
+    x = tf.transpose(x, [1,0,2])
+    x = tf.reshape(x, [-1, n_classes])
+    x = tf.split(x, SEQUENCE_LENGTH, 0)
 
     lstm_cell = rnn.BasicLSTMCell(rnn_size)
     outputs, states = rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
 
     output = tf.matmul(outputs[-1],layer['weights']) + layer['biases']
-    print(outputs[-1].shape)
+    # print(outputs[-1].shape)
 
     return output
 
@@ -85,18 +100,24 @@ def train_neural_network(x):
 
         for epoch in range(hm_epochs):
             epoch_loss = 0
-            for i in range(int(num_examples)):
-                epoch_x = x_input_tensor[i]
-                epoch_y = y_input_tensor[i]
-                epoch_x = epoch_x.reshape((batch_size,SEQUENCE_LENGTH, len(chars)))
-                _, c = sess.run([optimizer, cost], feed_dict={x: epoch_x, y: epoch_y})
-                epoch_loss += c
+        
+            epoch_x,epoch_y,_,_ = GetNextData()
+
+            epoch_x = epoch_x.reshape((batch_size,SEQUENCE_LENGTH,n_classes))
+            epoch_y = epoch_y.reshape((batch_size, n_classes))
+            _, c = sess.run([optimizer, cost], feed_dict={x: epoch_x, y: epoch_y})
+            epoch_loss += c
 
             print('Epoch', epoch, 'completed out of',hm_epochs,'loss:',epoch_loss)
 
-        # correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
+        _,_,ci,ic = GetNextData()
+        xval = PrepareInputData("r the researchers who studied the workers were aware",ci)
+        nc = tf.argmax(prediction, 1)         
+        ind = nc.eval({x:xval.reshape((1,SEQUENCE_LENGTH,n_classes))}) 
+        print("start")
+        print(ind)
+        print(ic[ind[0]])
+        print(ci['e'])
+        print(ci['r'])
 
-        # accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
-        # print('Accuracy:',accuracy.eval({x:mnist.test.images.reshape((-1, n_chunks, chunk_size)                                                             ), y:mnist.test.labels}))
-
-train_neural_network(x_input_tensor)
+train_neural_network(x)
